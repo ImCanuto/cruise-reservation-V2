@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Reserva de Cruzeiros</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <div class="max-w-5xl mx-auto p-6">
+    <h1 class="text-3xl font-bold mb-6">Reserva de Cruzeiros</h1>
+
+    <div class="mb-10">
+      <h2 class="text-xl font-semibold mb-2">Itinerários disponíveis</h2>
+      <div id="itinerarios" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+    </div>
+
+    <div class="mb-10">
+      <h2 class="text-xl font-semibold mb-2">Nova Reserva</h2>
+      <form id="form_reserva" class="space-y-3">
+        <input id="cliente" placeholder="Seu ID de cliente" class="w-full border rounded px-3 py-2" required />
+        <input id="it_id" placeholder="Itinerário ID" class="w-full border rounded px-3 py-2" />
+        <input id="pax" type="number" placeholder="Passageiros" class="w-full border rounded px-3 py-2" value="2" />
+        <input id="cab" type="number" placeholder="Cabines" class="w-full border rounded px-3 py-2" value="1" />
+        <input id="valor" type="number" placeholder="Valor total" class="w-full border rounded px-3 py-2" step="0.01" />
+        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">Reservar</button>
+      </form>
+      <div id="resposta_reserva" class="mt-2 text-sm text-green-700"></div>
+    </div>
+
+    <div class="mb-10">
+      <h2 class="text-xl font-semibold mb-2">Promoções</h2>
+      <input type="text" id="cliente_id" placeholder="Seu ID (nome ou email)" class="border px-3 py-2 rounded w-full mb-3" />
+      <div class="flex gap-2">
+        <button onclick="registrarInteresse()" class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">Registrar interesse</button>
+        <button onclick="cancelarInteresse()" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Cancelar interesse</button>
+        <a id="notificacao_link" href="#" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Ir para notificações</a>
+      </div>
+    </div>
+
+    <div class="mb-10">
+      <h2 class="text-xl font-semibold mb-2">Suas Reservas</h2>
+      <form onsubmit="abrirMinhasReservas(); return false;">
+        <input type="text" id="reserva_cliente_id" placeholder="Digite seu ID de cliente" class="border px-3 py-2 rounded w-full mb-3" />
+        <button class="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700">Ver minhas reservas</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let itinerarios = [];
+
+    function carregarItinerarios() {
+      fetch('http://localhost:5000/itinerarios')
+        .then(r => r.json())
+        .then(dados => {
+          itinerarios = dados;
+          const div = document.getElementById('itinerarios');
+          div.innerHTML = '';
+          dados.forEach(it => {
+            const card = document.createElement('div');
+            card.className = 'bg-white rounded shadow p-4 cursor-pointer hover:bg-blue-50';
+            card.onclick = () => preencherReserva(it);
+            card.innerHTML = `
+              <img src="./navio.png" class="mb-2 object-cover rounded" />
+              <div><strong>${it.destino}</strong></div>
+              <div>Partida: ${it.data_partida}</div>
+              <div>Noites: ${it.noites}</div>
+              <div>Valor por pessoa: R$${it.valor_por_pessoa}</div>
+              <div>Cabines disponíveis: ${it.cabines_disponiveis}</div>
+              <div>ID: ${it.id}</div>
+            `;
+            div.appendChild(card);
+          });
+        });
+    }
+
+    function preencherReserva(it) {
+      document.getElementById('it_id').value = it.id;
+      document.getElementById('valor').value = it.valor_por_pessoa;
+    }
+
+    document.getElementById('form_reserva').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const payload = {
+        cliente_id: document.getElementById('cliente').value,
+        itinerario_id: document.getElementById('it_id').value,
+        passageiros: +document.getElementById('pax').value,
+        cabines: +document.getElementById('cab').value,
+        valor_total: +document.getElementById('valor').value
+      };
+      fetch('http://localhost:5000/reserva', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(async r => {
+        if (!r.ok) {
+          const erro = await r.text();
+          console.error("Erro da API:", erro);
+          throw new Error("Falha ao reservar");
+        }
+        return r.json();
+      })
+      .then(resp => {
+        const linkPagamento = `pagamento.html?reserva_id=${resp.reserva_id}`;
+        document.getElementById('resposta_reserva').innerHTML = `
+          <p>Reserva ID: ${resp.reserva_id}</p>
+          <p>Link pagamento: <a href="${linkPagamento}" class="text-blue-600 underline">${linkPagamento}</a></p>
+        `;
+      });
+    });
+
+    function registrarInteresse() {
+      const id = document.getElementById('cliente_id').value;
+      fetch(`http://localhost:5003/interesse/${id}`, { method: 'POST' });
+      document.getElementById('notificacao_link').href = `notificacoes.html?cliente=${id}`;
+    }
+
+    function cancelarInteresse() {
+      const id = document.getElementById('cliente_id').value;
+      fetch(`http://localhost:5003/interesse/${id}`, { method: 'DELETE' });
+    }
+
+    function abrirMinhasReservas() {
+      const id = document.getElementById('reserva_cliente_id').value;
+      if (id) window.location.href = `minhas_reservas.html?cliente=${id}`;
+    }
+
+    window.onload = carregarItinerarios;
+  </script>
+</body>
+</html>

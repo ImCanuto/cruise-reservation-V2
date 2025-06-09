@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Confirmação de Pagamento</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <div class="max-w-xl mx-auto p-6">
+    <h1 class="text-2xl font-bold mb-6">Pagamento da Reserva</h1>
+
+    <label class="block text-sm font-medium text-gray-700 mb-1">Reserva ID:</label>
+    <input type="text" id="reserva_id" class="w-full border border-gray-300 rounded px-3 py-2 mb-4" placeholder="Digite o ID da reserva" />
+
+    <div class="flex gap-4">
+      <button onclick="enviarPagamento('aprovado')" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Confirmar pagamento</button>
+      <button onclick="enviarPagamento('recusado')" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">Cancelar pagamento</button>
+    </div>
+
+    <div id="mensagem" class="mt-4 text-sm"></div>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const reserva = urlParams.get('reserva_id');
+    if (reserva) document.getElementById("reserva_id").value = reserva;
+
+    function enviarPagamento(status) {
+      const reservaId = document.getElementById("reserva_id").value;
+      if (!reservaId) {
+        document.getElementById("mensagem").innerText = "Por favor, insira um ID de reserva válido.";
+        return;
+      }
+
+      fetch("http://localhost:5002/webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reserva_id: reservaId, status: status })
+      })
+        .then(r => r.json())
+        .then(resp => {
+          document.getElementById("mensagem").innerText = resp.mensagem || JSON.stringify(resp);
+        })
+        .catch(() => {
+          document.getElementById("mensagem").innerText = "Erro ao comunicar com o servidor.";
+        });
+    }
+  </script>
+</body>
+</html>

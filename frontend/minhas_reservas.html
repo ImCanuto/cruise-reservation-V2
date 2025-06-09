@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Minhas Reservas</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800">
+  <div class="max-w-4xl mx-auto p-6">
+    <h1 class="text-2xl font-bold mb-4">Minhas Reservas</h1>
+
+    <div id="reservas" class="space-y-4"></div>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const cliente = urlParams.get("cliente");
+
+    if (!cliente) {
+      document.getElementById("reservas").innerHTML = "<p class='text-red-600'>Cliente não informado na URL.</p>";
+    } else {
+      fetch(`http://localhost:5000/reservas/${cliente}`)
+        .then(r => r.json())
+        .then(dados => {
+          const div = document.getElementById("reservas");
+          if (!dados.length) {
+            div.innerHTML = "<p>Nenhuma reserva encontrada.</p>";
+            return;
+          }
+
+          dados.forEach(res => {
+            const bloco = document.createElement("div");
+            bloco.className = "bg-white shadow p-4 rounded";
+
+            bloco.innerHTML = `
+              <p><strong>Reserva ID:</strong> ${res.reserva_id}</p>
+              <p><strong>Itinerário:</strong> ${res.itinerario_id}</p>
+              <p><strong>Passageiros:</strong> ${res.passageiros}</p>
+              <p><strong>Cabines:</strong> ${res.cabines}</p>
+              <button onclick="cancelar('${res.reserva_id}')" class="mt-2 bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">Cancelar Reserva</button>
+            `;
+
+            div.appendChild(bloco);
+          });
+        });
+    }
+
+    function cancelar(id) {
+      fetch(`http://localhost:5000/reserva/${id}`, { method: "DELETE" })
+        .then(r => r.json())
+        .then(resp => {
+          alert(resp.mensagem || "Reserva cancelada.");
+          location.reload();
+        });
+    }
+  </script>
+</body>
+</html>
