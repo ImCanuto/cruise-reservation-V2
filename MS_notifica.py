@@ -10,7 +10,7 @@ clientes_inscritos = set()
 
 @app.route('/eventos/<cliente_id>')
 def sse(cliente_id):
-    # Removida a verificação de inscrição - qualquer cliente pode receber eventos
+    # Qualquer cliente pode receber eventos
     def stream():
         q = queue.Queue()
         clientes[cliente_id] = q
@@ -19,7 +19,8 @@ def sse(cliente_id):
                 evento = q.get()
                 yield f"data: {json.dumps(evento)}\n\n"
         except GeneratorExit:
-            clientes.pop(cliente_id, None)
+            if cliente_id in clientes:
+                clientes.pop(cliente_id)
 
     return Response(stream(), mimetype='text/event-stream')
 
@@ -45,15 +46,16 @@ def distribuir_evento(evento):
             if cid in clientes:
                 clientes[cid].put(evento)
                 
-    # Eventos específicos: para o cliente-alvo (sem necessidade de inscrição)
-    elif cliente_id and cliente_id in clientes:
-        clientes[cliente_id].put(evento)
+    # Eventos específicos: para o cliente-alvo
+    elif cliente_id:
+        if cliente_id in clientes:
+            clientes[cliente_id].put(evento)
 
 def consumidor_background():
     conexao = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
     canal = conexao.channel()
 
-    # Adicionado 'pagamento-recusado' para receber todos os status de pagamento
+    # Filas para todos os tipos de eventos
     filas = ['promocoes', 'pagamento-aprovado', 'pagamento-recusado', 'bilhete-gerado']
     
     for fila in filas:
@@ -66,29 +68,42 @@ def consumidor_background():
             except:
                 data = {'mensagem': body.decode()}
 
-            # Normaliza tipos de eventos
+            # Processar diferentes tipos de eventos
             if tipo_evento == 'promocoes':
-                tipo_normalizado = 'promocao'
-            elif tipo_evento.startswith('pagamento-'):
-                tipo_normalizado = 'pagamento'
-                # Adiciona status específico para pagamentos
-                data['status'] = 'aprovado' if tipo_evento == 'pagamento-aprovado' else 'recusado'
-            else:
-                tipo_normalizado = tipo_evento.replace('-', '')
-
-            # Para eventos de pagamento, extrai dados do envelope
-            if tipo_normalizado == 'pagamento':
-                payload = {
-                    'tipo': tipo_normalizado,
-                    'reserva_id': data['data']['reserva_id'],
-                    'cliente_id': data['data']['cliente_id'],
-                    'status': data['status']
+                evento = {
+                    'tipo': 'promocao',
+                    'mensagem': data.get('mensagem', 'Nova promoção disponível!')
                 }
-            else:
-                payload = {'tipo': tipo_normalizado, **data}
                 
-            print(f"[Notificações] Evento '{tipo_evento}' processado")
-            distribuir_evento(payload)
+            elif tipo_evento in ('pagamento-aprovado', 'pagamento-recusado'):
+                # Para eventos de pagamento, extrair dados do envelope
+                payload = data.get('data', {})
+                evento = {
+                    'tipo': 'pagamento',
+                    'reserva_id': payload.get('reserva_id', ''),
+                    'cliente_id': payload.get('cliente_id', ''),
+                    'status': 'aprovado' if tipo_evento == 'pagamento-aprovado' else 'recusado'
+                }
+                
+            elif tipo_evento == 'bilhete-gerado':
+                # Evento de bilhete gerado
+                evento = {
+                    'tipo': 'bilhete',
+                    'reserva_id': data.get('reserva_id', ''),
+                    'bilhete_id': data.get('bilhete_id', ''),
+                    'destino': data.get('destino', ''),
+                    'cliente_id': data.get('cliente_id', '')
+                }
+                
+            else:
+                # Outros eventos
+                evento = {
+                    'tipo': tipo_evento.replace('-', '_'),
+                    'dados': data
+                }
+            
+            print(f"[Notificações] Evento processado: {evento}")
+            distribuir_evento(evento)
 
         canal.basic_consume(queue=fila, on_message_callback=callback, auto_ack=True)
 
