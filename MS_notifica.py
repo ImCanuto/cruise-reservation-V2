@@ -10,9 +10,7 @@ clientes_inscritos = set()
 
 @app.route('/eventos/<cliente_id>')
 def sse(cliente_id):
-    if cliente_id not in clientes_inscritos:
-        return Response("Cliente não está inscrito para notificações", status=403)
-
+    # Removida a verificação de inscrição - qualquer cliente pode receber eventos
     def stream():
         q = queue.Queue()
         clientes[cliente_id] = q
@@ -39,20 +37,25 @@ def cancelar_interesse(cliente_id):
 
 def distribuir_evento(evento):
     tipo = evento.get('tipo')
+    cliente_id = evento.get('cliente_id')
+    
+    # Promoções: apenas para clientes inscritos
     if tipo == 'promocao':
         for cid in clientes_inscritos:
             if cid in clientes:
                 clientes[cid].put(evento)
-    elif tipo in ['pagamento', 'bilhete']:
-        cliente_id = evento.get('cliente_id')
-        if cliente_id in clientes_inscritos and cliente_id in clientes:
-            clientes[cliente_id].put(evento)
+                
+    # Eventos específicos: para o cliente-alvo (sem necessidade de inscrição)
+    elif cliente_id and cliente_id in clientes:
+        clientes[cliente_id].put(evento)
 
 def consumidor_background():
     conexao = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
     canal = conexao.channel()
 
-    filas = ['promocoes', 'pagamento-aprovado', 'bilhete-gerado']
+    # Adicionado 'pagamento-recusado' para receber todos os status de pagamento
+    filas = ['promocoes', 'pagamento-aprovado', 'pagamento-recusado', 'bilhete-gerado']
+    
     for fila in filas:
         canal.queue_declare(queue=fila)
 
@@ -63,11 +66,29 @@ def consumidor_background():
             except:
                 data = {'mensagem': body.decode()}
 
-            tipo_normalizado = 'promocao' if tipo_evento == 'promocoes' else tipo_evento.replace('-', '')
-            evento = {'tipo': tipo_normalizado, **data}
+            # Normaliza tipos de eventos
+            if tipo_evento == 'promocoes':
+                tipo_normalizado = 'promocao'
+            elif tipo_evento.startswith('pagamento-'):
+                tipo_normalizado = 'pagamento'
+                # Adiciona status específico para pagamentos
+                data['status'] = 'aprovado' if tipo_evento == 'pagamento-aprovado' else 'recusado'
+            else:
+                tipo_normalizado = tipo_evento.replace('-', '')
 
-            print(f"[Notificações] Evento '{tipo_evento}' distribuído")
-            distribuir_evento(evento)
+            # Para eventos de pagamento, extrai dados do envelope
+            if tipo_normalizado == 'pagamento':
+                payload = {
+                    'tipo': tipo_normalizado,
+                    'reserva_id': data['data']['reserva_id'],
+                    'cliente_id': data['data']['cliente_id'],
+                    'status': data['status']
+                }
+            else:
+                payload = {'tipo': tipo_normalizado, **data}
+                
+            print(f"[Notificações] Evento '{tipo_evento}' processado")
+            distribuir_evento(payload)
 
         canal.basic_consume(queue=fila, on_message_callback=callback, auto_ack=True)
 
